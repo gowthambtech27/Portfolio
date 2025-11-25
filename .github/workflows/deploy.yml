@@ -1,35 +1,59 @@
-name: Portfolio
+name: profile
 
 on:
   push:
     branches:
-      - main   # or 'master' if your main branch is named master
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
 
 jobs:
-  build-and-deploy:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v3
+      # 1️⃣ Checkout your repository
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: 20
+      # 2️⃣ Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
-    - name: Install Angular CLI
-      run: npm install -g @angular/cli
+      # 3️⃣ Install and Build Angular App
+      - name: Install and Build Angular App
+        run: |
+          npm ci
+          npm run build -- --configuration=production --base-href /${{ github.event.repository.name }}/
 
-    - name: Install Dependencies
-      run: npm install
+      # 4️⃣ Detect Angular dist path (fixed quoting)
+      - name: Detect Angular dist path
+        id: detect-dist
+        run: |
+          DIST_PATH=$(node -e "const a=require('./angular.json');console.log(a.projects[Object.keys(a.projects)[0]].architect.build.options.outputPath)")
+          echo "DIST_PATH=$DIST_PATH" >> $GITHUB_ENV
+          echo "Detected output path: $DIST_PATH"
 
-    - name: Build Angular App
-      run: ng build --configuration production --base-href "/gowtham-portfolio/"
+      # 5️⃣ Upload build folder
+      - name: Upload build files
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ env.DIST_PATH }}
 
-    - name: Deploy to GitHub Pages
-      uses: JamesIves/github-pages-deploy-action@v4
-      with:
-        branch: gh-pages      # Branch to deploy to
-        folder: dist/your-app-name  # Replace 'your-app-name' with actual Angular project folder name inside dist
-        clean: true
+      # 6️⃣ Deploy to GitHub Pages
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
